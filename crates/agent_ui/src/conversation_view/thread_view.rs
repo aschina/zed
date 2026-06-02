@@ -638,12 +638,8 @@ pub struct ThreadView {
     pub(crate) thread_search_visible: bool,
 }
 impl Focusable for ThreadView {
-    fn focus_handle(&self, cx: &App) -> FocusHandle {
-        if self.parent_session_id.is_some() {
-            self.focus_handle.clone()
-        } else {
-            self.active_editor(cx).focus_handle(cx)
-        }
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
     }
 }
 
@@ -964,11 +960,18 @@ impl ThreadView {
             }));
         }));
 
+        let focus_handle = cx.focus_handle();
+        subscriptions.push(cx.on_focus(&focus_handle, window, |this, window, cx| {
+            if this.parent_session_id.is_none() {
+                this.active_editor(cx).focus_handle(cx).focus(window, cx);
+            }
+        }));
+
         let mut this = Self {
             root_thread_id,
             session_id,
             parent_session_id,
-            focus_handle: cx.focus_handle(),
+            focus_handle,
             thread,
             conversation,
             server_view,
@@ -8315,8 +8318,10 @@ impl ThreadView {
                             .iter()
                             .enumerate()
                             .map(|(content_ix, content)| {
-                                div().id(("tool-call-output", entry_ix)).child(
-                                    self.render_tool_call_content(
+                                div()
+                                    .id(("tool-call-output", entry_ix))
+                                    .debug_selector(|| format!("tool-call-output-{entry_ix}"))
+                                    .child(self.render_tool_call_content(
                                         active_session_id,
                                         entry_ix,
                                         content,
@@ -8327,8 +8332,7 @@ impl ThreadView {
                                         focus_handle,
                                         window,
                                         cx,
-                                    ),
-                                )
+                                    ))
                             }),
                     )
                     .when(!use_card_layout, |this| {
