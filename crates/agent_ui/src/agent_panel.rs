@@ -2953,7 +2953,7 @@ impl AgentPanel {
         if let BaseView::AgentThread { conversation_view } = &self.base_view {
             if conversation_view.entity_id() == draft.entity_id() {
                 if focus {
-                    self.focus_handle(cx).focus(window, cx);
+                    self.activation_focus_handle(cx).focus(window, cx);
                 }
                 return;
             }
@@ -3547,7 +3547,7 @@ impl AgentPanel {
 
         active_thread.update(cx, |active_thread, cx| {
             active_thread.expand_message_editor(&ExpandMessageEditor, window, cx);
-            active_thread.focus_handle(cx).focus(window, cx);
+            active_thread.activation_focus_handle(cx).focus(window, cx);
         })
     }
 
@@ -3661,7 +3661,7 @@ impl AgentPanel {
             cx.emit(PanelEvent::ZoomOut);
         } else {
             if !self.focus_handle(cx).contains_focused(window, cx) {
-                cx.focus_self(window);
+                self.activation_focus_handle(cx).focus(window, cx);
             }
             cx.emit(PanelEvent::ZoomIn);
         }
@@ -4235,7 +4235,7 @@ impl AgentPanel {
         self.refresh_base_view_subscriptions(window, cx);
 
         if focus {
-            self.focus_handle(cx).focus(window, cx);
+            self.activation_focus_handle(cx).focus(window, cx);
         }
         cx.emit(AgentPanelEvent::ActiveViewChanged);
     }
@@ -4958,6 +4958,18 @@ impl Panel for AgentPanel {
         AGENT_PANEL_KEY
     }
 
+    fn activation_focus_handle(&self, cx: &App) -> FocusHandle {
+        match self.visible_surface() {
+            VisibleSurface::AgentThread(conversation_view) => conversation_view
+                .read(cx)
+                .active_thread()
+                .map(|thread| thread.read(cx).activation_focus_handle(cx))
+                .unwrap_or_else(|| conversation_view.focus_handle(cx)),
+            VisibleSurface::Terminal(terminal_view) => terminal_view.focus_handle(cx),
+            VisibleSurface::Uninitialized => self.focus_handle.clone(),
+        }
+    }
+
     fn position(&self, _window: &Window, cx: &App) -> DockPosition {
         agent_panel_dock_position(cx)
     }
@@ -5357,7 +5369,14 @@ impl AgentPanel {
                                 let conversation_view = conversation_view.downgrade();
                                 move |_: &menu::Confirm, window, cx| {
                                     if let Some(conversation_view) = conversation_view.upgrade() {
-                                        conversation_view.focus_handle(cx).focus(window, cx);
+                                        let thread =
+                                            conversation_view.read(cx).active_thread().cloned();
+                                        if let Some(thread) = thread {
+                                            thread
+                                                .read(cx)
+                                                .activation_focus_handle(cx)
+                                                .focus(window, cx);
+                                        }
                                     }
                                 }
                             })
@@ -5365,7 +5384,14 @@ impl AgentPanel {
                                 let conversation_view = conversation_view.downgrade();
                                 move |_: &editor::actions::Cancel, window, cx| {
                                     if let Some(conversation_view) = conversation_view.upgrade() {
-                                        conversation_view.focus_handle(cx).focus(window, cx);
+                                        let thread =
+                                            conversation_view.read(cx).active_thread().cloned();
+                                        if let Some(thread) = thread {
+                                            thread
+                                                .read(cx)
+                                                .activation_focus_handle(cx)
+                                                .focus(window, cx);
+                                        }
                                     }
                                 }
                             })
