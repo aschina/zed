@@ -5363,37 +5363,28 @@ impl AgentPanel {
                             )
                             .into_any_element()
                     } else {
+                        let focus_active_thread = {
+                            let conversation_view = conversation_view.downgrade();
+                            move |window: &mut Window, cx: &mut App| {
+                                if let Some(conversation_view) = conversation_view.upgrade()
+                                    && let Some(thread) =
+                                        conversation_view.read(cx).active_thread().cloned()
+                                {
+                                    thread
+                                        .read(cx)
+                                        .activation_focus_handle(cx)
+                                        .focus(window, cx);
+                                }
+                            }
+                        };
                         let editable_title = div()
                             .flex_1()
                             .on_action({
-                                let conversation_view = conversation_view.downgrade();
-                                move |_: &menu::Confirm, window, cx| {
-                                    if let Some(conversation_view) = conversation_view.upgrade() {
-                                        let thread =
-                                            conversation_view.read(cx).active_thread().cloned();
-                                        if let Some(thread) = thread {
-                                            thread
-                                                .read(cx)
-                                                .activation_focus_handle(cx)
-                                                .focus(window, cx);
-                                        }
-                                    }
-                                }
+                                let focus_active_thread = focus_active_thread.clone();
+                                move |_: &menu::Confirm, window, cx| focus_active_thread(window, cx)
                             })
-                            .on_action({
-                                let conversation_view = conversation_view.downgrade();
-                                move |_: &editor::actions::Cancel, window, cx| {
-                                    if let Some(conversation_view) = conversation_view.upgrade() {
-                                        let thread =
-                                            conversation_view.read(cx).active_thread().cloned();
-                                        if let Some(thread) = thread {
-                                            thread
-                                                .read(cx)
-                                                .activation_focus_handle(cx)
-                                                .focus(window, cx);
-                                        }
-                                    }
-                                }
+                            .on_action(move |_: &editor::actions::Cancel, window, cx| {
+                                focus_active_thread(window, cx)
                             })
                             .child(title_editor);
 
@@ -7121,7 +7112,9 @@ mod tests {
 
         let thread_view = panel.read_with(cx, |panel, cx| panel.active_thread_view(cx).unwrap());
         thread_view.update(cx, |thread_view, cx| {
-            thread_view.expanded_tool_calls.insert(tool_call_id);
+            thread_view.entry_view_state.update(cx, |state, _cx| {
+                state.expand_tool_call(tool_call_id);
+            });
             cx.notify();
         });
 
