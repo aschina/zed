@@ -1,4 +1,5 @@
 pub mod active_file_name;
+mod auto_preview;
 pub mod dock;
 pub mod history_manager;
 pub mod invalid_item_view;
@@ -115,6 +116,7 @@ use settings::{
     update_settings_file,
 };
 
+pub use auto_preview::{AutoPreviewProvider, register_auto_preview_provider};
 use sqlez::{
     bindable::{Bind, Column, StaticColumnCount},
     statement::Statement,
@@ -155,7 +157,7 @@ use util::{
 };
 use uuid::Uuid;
 pub use workspace_settings::{
-    AutosaveSetting, BottomDockLayout, EncodingDisplayOptions, FocusFollowsMouse,
+    AutoPreview, AutosaveSetting, BottomDockLayout, EncodingDisplayOptions, FocusFollowsMouse,
     RestoreOnStartupBehavior, StatusBarSettings, TabBarSettings, WorkspaceSettings,
 };
 use zed_actions::{Spawn, feedback::FileBugReport, theme::ToggleMode};
@@ -1761,6 +1763,22 @@ impl Workspace {
         let _items_serializer = cx.spawn_in(window, async move |this, cx| {
             Self::serialize_items(&this, serializable_items_rx, cx).await
         });
+
+        cx.subscribe_in(&cx.entity(), window, |this, _, event, window, cx| {
+            if matches!(event, Event::ActiveItemChanged | Event::ItemRemoved { .. }) {
+                auto_preview::sync_side_preview(this, window, cx);
+            }
+        })
+        .detach();
+
+        let mut auto_preview_setting = WorkspaceSettings::get_global(cx).auto_preview;
+        cx.observe_global_in::<SettingsStore>(window, move |this, window, cx| {
+            let new_setting = WorkspaceSettings::get_global(cx).auto_preview;
+            if std::mem::replace(&mut auto_preview_setting, new_setting) != new_setting {
+                auto_preview::auto_preview_setting_changed(this, window, cx);
+            }
+        })
+        .detach();
 
         let subscriptions = vec![
             cx.observe_window_activation(window, Self::on_window_activation_changed),
